@@ -1,135 +1,132 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-  }
+/*module "cert" {
+  source = "./modules/acm"
+  domain_name = "${var.domain_name}"
+}*/
+
+module "s3_access" {
+  source = "./modules/iam"
 }
 
-provider "aws" {
-  access_key = "AKIAVECVINOBQR5BE3MU"
-  secret_key = "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"
-  region = var.region
+module "vpc" {
+  source = "./modules/vpc"
+  vpc_cidr = "${var.vpc_cidr}"
+  vpc_name = "${var.vpc_name}"
 }
 
-resource "aws_vpc" "my_vpc" {
-  cidr_block = "172.16.0.0/16"
-
-  tags = {
-    Name = "tf-example"
-  }
+module "igw" {
+  source = "./modules/igw"
+  vpc_id = "${module.vpc.vpc_id}"
+  igw_name = "ncpl-clients-igw"
 }
-resource "aws_subnet" "my_subnet" {
-  vpc_id            = aws_vpc.my_vpc.id
-  cidr_block        = "172.16.10.0/24"
-  availability_zone = "us-east-1a"
-  tags = {
-    Name = "tf-example"
-  }
-}
-resource "aws_network_interface" "foo" {
-  subnet_id   = aws_subnet.my_subnet.id
-  private_ips = ["172.16.10.100"]
-  tags = {
-    Name = "primary_network_interface"
-  }
-}
-resource "aws_instance" "example" {
-  ami           = "ami-03d315ad33b9d49c4"
-  instance_type = "t2.micro"
-  network_interface {
-    network_interface_id = aws_network_interface.foo.id
-    device_index         = 0
-  }
-  credit_specification {
-    cpu_credits = "unlimited"
-  }
-  tags = {
-    Name = "ExampleInstance"
-  }
+module "public-subnet-a" {
+  source = "./modules/public-subnet"
+  subnet_cidr = "${var.public_subnet_a_cidr}"
+  az = "${var.public_subnet_az_1}"
+  vpc_id = "${module.vpc.vpc_id}"
+  igw_id = "${module.igw.igw_id}"
+  subnet_name = "${var.subnet_name_stagging}"
 }
 
-resource "random_pet" "petname" {
-  length    = 3
-  separator = "-"
+module "public-subnet-b" {
+  source = "./modules/public-subnet"
+  subnet_cidr = "${var.public_subnet_b_cidr}"
+  az = "${var.public_subnet_az_2}"
+  vpc_id = "${module.vpc.vpc_id}"
+  igw_id = "${module.igw.igw_id}"
+  subnet_name = "${var.subnet_name_prod}"
 }
 
-resource "aws_s3_bucket" "dev" {
-  bucket = "${var.dev_prefix}-${random_pet.petname.id}"
-  acl    = "public-read"
 
-  policy = <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "PublicReadGetObject",
-            "Effect": "Allow",
-            "Principal": "*",
-            "Action": [
-                "s3:GetObject"
-            ],
-            "Resource": [
-                "arn:aws:s3:::${var.dev_prefix}-${random_pet.petname.id}/*"
-            ]
-        }
-    ]
-}
-EOF
-
-  website {
-    index_document = "index.html"
-    error_document = "error.html"
-
-  }
-  force_destroy = true
+module "security_group" {
+  source = "./modules/sg"
+  vpc_id = "${module.vpc.vpc_id}"
+  security_group_name_stagging = var.security_group_name_stagging
 }
 
-resource "aws_s3_bucket_object" "dev" {
-  acl          = "public-read"
-  key          = "index.html"
-  bucket       = aws_s3_bucket.dev.id
-  content      = file("${path.module}/assets/index.html")
-  content_type = "text/html"
 
+module "key-pair" {
+  source = "./modules/data"
 }
 
-resource "aws_s3_bucket" "prod" {
-  bucket = "${var.prod_prefix}-${random_pet.petname.id}"
-  acl    = "public-read"
 
-  policy = <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "PublicReadGetObject",
-            "Effect": "Allow",
-            "Principal": "*",
-            "Action": [
-                "s3:GetObject"
-            ],
-            "Resource": [
-                "arn:aws:s3:::${var.prod_prefix}-${random_pet.petname.id}/*"
-            ]
-        }
-    ]
-}
-EOF
-
-  website {
-    index_document = "index.html"
-    error_document = "error.html"
-
-  }
-  force_destroy = true
+module "key" {
+  source = "./modules/keypair"
+  key_file = module.key-pair.key_value
 }
 
-resource "aws_s3_bucket_object" "prod" {
-  acl          = "public-read"
-  key          = "index.html"
-  bucket       = aws_s3_bucket.prod.id
-  content      = file("${path.module}/assets/index.html")
-  content_type = "text/html"
+module "eip-1" {
+  source = "./modules/eip"
+  instance_id = "${module.stagging.instance_id}"
+  eip_name = var.stagging_eip_name
+}
 
+module "stagging" {
+  source = "./modules/ec2"
+  ami_id = "${var.stagging_ami_id}"
+  public_subnet = "${module.public-subnet-a.subnet_id}"
+  security-group-id = "${module.security_group.public-sg-id}"
+  key = "${module.key.key_name}"
+  server_name = "${var.server_name_stagging}"
+  primary_disk_size = var.primary_stagging_disk_size
+  vm_size = var.stagging_vm_size
+  instance_profile = module.s3_access.s3_access
+}
+
+module "ebs-stagging" {
+  source = "./modules/ebs"
+  availabilityzone = var.public_subnet_az_1
+  data_disk_size = "${var.secondary_stagging_disk}"
+  instance_id = module.stagging.instance_id
+  instance_name = "${var.server_name_stagging}"
+  ebs_name =  "${var.server_name_stagging}-data-disk"
+}
+
+
+module "security_group_a" {
+  source = "./modules/sg-1"
+  vpc_id = "${module.vpc.vpc_id}"
+  security_group_name_production = var.security_group_name_production
+}
+
+module "eip-2" {
+  source = "./modules/eip"
+  instance_id = "${module.production.instance_id}"
+  eip_name = var.prod_eip_name
+}
+
+module "production" {
+  source = "./modules/ec2"
+  ami_id = "${var.prod_ami_id}"
+  public_subnet = "${module.public-subnet-a.subnet_id}"
+  security-group-id = "${module.security_group_a.public-sg-id}"
+  key = "${module.key.key_name}"
+  server_name = "${var.server_name_production}"
+  primary_disk_size = var.primary_prod_disk_size
+  vm_size = var.prod_vm_size
+  instance_profile = module.s3_access.s3_access
+}
+
+module "ebs-production" {
+  source = "./modules/ebs"
+  availabilityzone = var.public_subnet_az_2
+  data_disk_size = "${var.secondary_prod_disk}"
+  instance_id = module.production.instance_id
+  instance_name = "${var.server_name_production}"
+  ebs_name = "${var.server_name_production}-data-disk"
+}
+
+
+
+module "dlm" {
+  source = "./modules/dlm"
+}
+
+module "api" {
+  source = "./modules/api"
+  api_name = "ncpl-clients-api"
+}
+
+module "bs" {
+  source = "./modules/beanstalk"
+  application_name = "ncpl-clients-bs"
 }
