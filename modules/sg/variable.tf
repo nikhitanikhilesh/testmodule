@@ -1,2 +1,2 @@
 variable "vpc_id" {}
-variable "security_group_name_stagging" {}
+variable "security_group_name" {}

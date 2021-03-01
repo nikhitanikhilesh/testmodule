@@ -5,9 +5,7 @@ resource "aws_eip" "web" {
   tags = {
     OS = "Linux"
     Name = var.eip_name
-    Scope = "Ncpl"
-    Purpose = "Server"
-    Project = "Clients"
-    Mode = "Automation"
+    
+    
   }
 }

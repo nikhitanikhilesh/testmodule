@@ -9,9 +9,7 @@ module "vpc" {
 
 tags = {
     Name = "${var.vpc_name}"
-    Scope = "Clients"
-    Purpose = "Security"
-    Mode = "Automation"
+    
   }
 }
 

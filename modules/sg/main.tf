@@ -1,5 +1,5 @@
 resource "aws_security_group" "public-sg" {
-  name        = var.security_group_name_stagging
+  name        = var.security_group_name
   vpc_id      = "${var.vpc_id}"
 
   ingress {
@@ -32,9 +32,7 @@ resource "aws_security_group" "public-sg" {
   }
 
   tags = {
-    Name = var.security_group_name_stagging
-    Scope = "Clients"
-    Purpose = "Security"
-    Mode = "Automation"
+    Name = var.security_group_name
+    
   }
 }
